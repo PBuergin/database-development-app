@@ -1,0 +1,228 @@
+#!/usr/bin/env node
+
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { spawnSync } = require("child_process");
+
+const root = __dirname;
+const courseDir = path.join(root, "course");
+const statesFile = path.join(courseDir, "states.yml");
+const overlaysDir = path.join(courseDir, "overlays");
+
+function usage() {
+  console.log(`Usage:
+  ./course-state list
+  ./course-state create <state> <target-dir>
+  ./course-state test <state> [--skip-slow]
+  ./course-state validate [--skip-slow]`);
+}
+
+function parseStates() {
+  const lines = fs.readFileSync(statesFile, "utf8").split(/\r?\n/);
+  const states = {};
+  let current = null;
+  let listKey = null;
+
+  for (const line of lines) {
+    if (!line.trim() || line.trim().startsWith("#") || line.trim() === "states:") {
+      continue;
+    }
+
+    const stateMatch = line.match(/^  ([a-z0-9-]+):\s*$/);
+    if (stateMatch) {
+      current = { overlays: [], tests: [], expectedFailures: [] };
+      states[stateMatch[1]] = current;
+      listKey = null;
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    const keyMatch = line.match(/^    ([A-Za-z]+):(?:\s*(.*))?$/);
+    if (keyMatch) {
+      const key = keyMatch[1];
+      const value = (keyMatch[2] || "").trim();
+      listKey = null;
+
+      if (["overlays", "tests", "expectedFailures"].includes(key)) {
+        listKey = key;
+        if (value === "[]") {
+          current[key] = [];
+          listKey = null;
+        }
+        continue;
+      }
+
+      if (key === "description" || key === "extends") {
+        current[key] = unquote(value);
+      }
+      continue;
+    }
+
+    const itemMatch = line.match(/^      -\s*(.*)$/);
+    if (itemMatch && listKey) {
+      current[listKey].push(unquote(itemMatch[1].trim()));
+    }
+  }
+
+  return states;
+}
+
+function unquote(value) {
+  return value.replace(/^["']|["']$/g, "");
+}
+
+function resolveState(states, name, seen = new Set()) {
+  const state = states[name];
+  if (!state) {
+    throw new Error(`Unknown state: ${name}`);
+  }
+  if (seen.has(name)) {
+    throw new Error(`Cycle in course state definitions at ${name}`);
+  }
+  seen.add(name);
+
+  if (!state.extends) {
+    return { ...state, overlays: [...state.overlays] };
+  }
+
+  const parent = resolveState(states, state.extends, seen);
+  return {
+    ...state,
+    overlays: [...parent.overlays, ...state.overlays],
+    tests: state.tests.length ? state.tests : parent.tests,
+    expectedFailures: state.expectedFailures.length ? state.expectedFailures : parent.expectedFailures,
+  };
+}
+
+function copyProject(target) {
+  const resolvedTarget = path.resolve(target);
+  if (resolvedTarget === root || resolvedTarget.startsWith(root + path.sep)) {
+    throw new Error("Target directory must be outside db-2-app.");
+  }
+  fs.rmSync(resolvedTarget, { recursive: true, force: true });
+  fs.mkdirSync(resolvedTarget, { recursive: true });
+  copyDir(root, resolvedTarget, new Set([".git", "target", ".idea", ".vscode"]));
+}
+
+function copyDir(source, target, excludedNames = new Set()) {
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    if (excludedNames.has(entry.name)) {
+      continue;
+    }
+    const sourcePath = path.join(source, entry.name);
+    const targetPath = path.join(target, entry.name);
+    if (entry.isDirectory()) {
+      fs.mkdirSync(targetPath, { recursive: true });
+      copyDir(sourcePath, targetPath, excludedNames);
+    } else if (entry.isSymbolicLink()) {
+      fs.symlinkSync(fs.readlinkSync(sourcePath), targetPath);
+    } else {
+      fs.copyFileSync(sourcePath, targetPath);
+    }
+  }
+}
+
+function applyOverlay(target, overlay) {
+  const overlayPath = path.join(overlaysDir, overlay);
+  if (!fs.existsSync(overlayPath)) {
+    throw new Error(`Missing overlay: ${overlay}`);
+  }
+  copyDir(overlayPath, target);
+}
+
+function createState(name, target) {
+  const states = parseStates();
+  const state = resolveState(states, name);
+  const resolvedTarget = path.resolve(target);
+  copyProject(resolvedTarget);
+  for (const overlay of state.overlays) {
+    applyOverlay(resolvedTarget, overlay);
+  }
+  fs.writeFileSync(
+    path.join(resolvedTarget, "COURSE_STATE.md"),
+    `# ${name}\n\n${state.description || ""}\n\nApplied overlays: ${state.overlays.join(", ") || "none"}\n`,
+    "utf8"
+  );
+  console.log(`Created ${name} at ${resolvedTarget}`);
+}
+
+function validate(skipSlow) {
+  const states = parseStates();
+  const baseTempDir = fs.existsSync("/tmp") ? "/tmp" : os.tmpdir();
+  const tempRoot = fs.mkdtempSync(path.join(baseTempDir, "db-2-app-states-"));
+  try {
+    for (const name of Object.keys(states)) {
+      testState(name, path.join(tempRoot, name), skipSlow);
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function testState(name, target, skipSlow) {
+  const states = parseStates();
+  const state = resolveState(states, name);
+  createState(name, target);
+  runCommands(name, target, state.tests, false, skipSlow);
+  runCommands(name, target, state.expectedFailures || [], true, skipSlow);
+}
+
+function runCommands(stateName, cwd, commands, expectedFailure, skipSlow) {
+  for (const command of commands) {
+    if (skipSlow && command.includes("-Ptestcontainers")) {
+      console.log(`[${stateName}] skip slow command: ${command}`);
+      continue;
+    }
+    console.log(`[${stateName}] ${expectedFailure ? "expect failure: " : ""}${command}`);
+    const result = spawnSync(command, {
+      cwd,
+      shell: true,
+      stdio: "inherit",
+    });
+    const failed = result.status !== 0;
+    if (expectedFailure ? !failed : failed) {
+      throw new Error(`[${stateName}] Unexpected result for: ${command}`);
+    }
+  }
+}
+
+const [command, ...args] = process.argv.slice(2);
+
+try {
+  if (command === "list") {
+    for (const [name, state] of Object.entries(parseStates())) {
+      console.log(`${name}: ${state.description || ""}`);
+    }
+  } else if (command === "create") {
+    if (args.length !== 2) {
+      usage();
+      process.exit(1);
+    }
+    createState(args[0], args[1]);
+  } else if (command === "test") {
+    const stateName = args.find((arg) => !arg.startsWith("--"));
+    if (!stateName) {
+      usage();
+      process.exit(1);
+    }
+    const baseTempDir = fs.existsSync("/tmp") ? "/tmp" : os.tmpdir();
+    const target = fs.mkdtempSync(path.join(baseTempDir, `db-2-app-${stateName}-`));
+    try {
+      testState(stateName, target, args.includes("--skip-slow"));
+    } finally {
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+  } else if (command === "validate") {
+    validate(args.includes("--skip-slow"));
+  } else {
+    usage();
+    process.exit(command ? 1 : 0);
+  }
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}

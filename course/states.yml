@@ -1,0 +1,34 @@
+states:
+  block-2-start:
+    description: "Starter fuer Block 2 mit bewusst schwacher V1-Migration."
+    overlays: []
+    tests:
+      - "./mvnw test"
+    expectedFailures:
+      - "./mvnw -Pguided-gaps test"
+
+  block-2-complete:
+    description: "Loesungsstand nach Block 2 mit V2-Migration fuer Ticket-Regeln."
+    overlays:
+      - block-2-complete
+    tests:
+      - "./mvnw test"
+      - "./mvnw -Pguided-gaps test"
+
+  block-3-start:
+    description: "Einstieg in Block 3; entspricht dem abgeschlossenen Block-2-Zustand."
+    extends: block-2-complete
+    overlays: []
+    tests:
+      - "./mvnw test"
+      - "./mvnw -Pguided-gaps test"
+
+  block-3-complete:
+    description: "Loesungsstand nach Block 3 mit Transaktionsworkflow."
+    extends: block-2-complete
+    overlays:
+      - block-3-complete
+    tests:
+      - "./mvnw test"
+      - "./mvnw -Pguided-gaps test"
+      - "./mvnw -Ptestcontainers test"

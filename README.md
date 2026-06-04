@@ -87,6 +87,32 @@ src/main/resources/db/migration/V2__enforce_ticket_rules.sql
 
 Diese `V2` ergänzt Pflichtfelder und einen Status-Constraint für die Ticket-Tabelle.
 
+## Kurs-Checkpoints
+
+Der normale Unterricht startet weiterhin in diesem Starterprojekt. Für Quereinstieg, Nacharbeit oder Lösungseinsicht können definierte Arbeitsstände erzeugt werden. Diese Zustände sind keine Git-Tags oder Branches, sondern werden aus Datei-Overlays materialisiert.
+
+```bash
+./course-state list
+./course-state create block-3-start ../work/db-2-app-block-3
+./course-state create block-3-complete ../work/db-2-app-block-3-loesung
+```
+
+| Zustand | Bedeutung |
+| --- | --- |
+| `block-2-start` | Starter für Block 2 mit schwacher `V1` |
+| `block-2-complete` | Lösung mit `V2__enforce_ticket_rules.sql` |
+| `block-3-start` | Einstieg in Block 3 auf Basis von Block 2 |
+| `block-3-complete` | Lösung mit Ticket-Kommentaren, Events, Transaktionen und `@Version` |
+
+Dozierende können die Zustände prüfen:
+
+```bash
+./course-state test block-3-complete
+./course-state validate --skip-slow
+```
+
+Ohne `--skip-slow` werden zusätzlich Testcontainers-Tests ausgeführt, wenn Docker oder Podman verfügbar ist.
+
 ## Teststrategie
 
 - `./mvnw test`: schnelle Tests ohne Docker.

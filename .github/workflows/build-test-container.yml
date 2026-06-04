@@ -19,7 +19,7 @@ env:
 
 jobs:
   maven:
-    name: Maven build and tests
+    name: Maven build and root tests
     runs-on: ubuntu-24.04
     outputs:
       app-version: ${{ steps.project-version.outputs.version }}
@@ -47,10 +47,37 @@ jobs:
       - name: Build application package
         run: ./mvnw -B package -DskipTests
 
+  checkpoint-states:
+    name: Checkpoint state / ${{ matrix.state }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        state:
+          - block-2-start
+          - block-2-complete
+          - block-3-start
+          - block-3-complete
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "24"
+          cache: maven
+
+      - name: Test checkpoint state
+        run: ./course-state test "${{ matrix.state }}"
+
   container:
     name: Container build and publish
     runs-on: ubuntu-24.04
-    needs: maven
+    needs:
+      - maven
+      - checkpoint-states
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
