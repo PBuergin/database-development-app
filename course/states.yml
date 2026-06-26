@@ -32,3 +32,22 @@ states:
       - "./mvnw test"
       - "./mvnw -Pguided-gaps test"
       - "./mvnw -Ptestcontainers test"
+
+  block-4-start:
+    description: "Einstieg in Block 4; entspricht dem abgeschlossenen Block-3-Zustand."
+    extends: block-3-complete
+    overlays: []
+    tests:
+      - "./mvnw test"
+      - "./mvnw -Pguided-gaps test"
+      - "./mvnw -Ptestcontainers test"
+
+  block-4-complete:
+    description: "Loesungsstand nach Block 4 mit Schema-Design-Erweiterungen."
+    extends: block-3-complete
+    overlays:
+      - block-4-complete
+    tests:
+      - "./mvnw test"
+      - "./mvnw -Pguided-gaps test"
+      - "./mvnw -Ptestcontainers test"
