@@ -51,3 +51,22 @@ states:
       - "./mvnw test"
       - "./mvnw -Pguided-gaps test"
       - "./mvnw -Ptestcontainers test"
+
+  block-5-start:
+    description: "Einstieg in Block 5; entspricht dem abgeschlossenen Block-4-Zustand."
+    extends: block-4-complete
+    overlays: []
+    tests:
+      - "./mvnw test"
+      - "./mvnw -Pguided-gaps test"
+      - "./mvnw -Ptestcontainers test"
+
+  block-5-complete:
+    description: "Loesungsstand nach Block 5 mit JPQL-Projektion und nativem Ticketreport."
+    extends: block-4-complete
+    overlays:
+      - block-5-complete
+    tests:
+      - "./mvnw test"
+      - "./mvnw -Pguided-gaps test"
+      - "./mvnw -Ptestcontainers test"

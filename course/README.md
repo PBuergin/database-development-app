@@ -12,6 +12,8 @@ Der normale Unterricht startet weiterhin im Root von `db-2-app`. Die Checkpoints
 | `block-3-complete` | Block-3-Loesung mit Transaktionsworkflow |
 | `block-4-start` | Einstieg in Block 4 auf Basis von `block-3-complete` |
 | `block-4-complete` | Block-4-Loesung mit Schema-Design-Erweiterungen |
+| `block-5-start` | Einstieg in Block 5 auf Basis von `block-4-complete` |
+| `block-5-complete` | Block-5-Loesung mit JPQL-Ticketuebersicht und nativem Status-/Prioritaetsreport |
 
 ## Arbeitskopie erzeugen
 
